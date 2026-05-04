@@ -1,5 +1,5 @@
 // Siempre usar la URL del backend directamente (sin rewrites)
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const BASE = 'https://agriflow-backend-elcm.onrender.com';
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
