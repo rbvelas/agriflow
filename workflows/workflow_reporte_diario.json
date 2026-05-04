@@ -1,0 +1,181 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a83d3174-d9e0-4039-9797-b2f31341182f",
+      "name": "Cron — 7:00 AM diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -3360,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT COUNT(*) FROM lectura_sensor WHERE registrado_en >= NOW() - INTERVAL '24 hours') as lecturas_24h, (SELECT COUNT(*) FROM lectura_sensor WHERE es_anomalia = true AND registrado_en >= NOW() - INTERVAL '24 hours') as anomalias_24h, (SELECT COUNT(*) FROM alerta WHERE resuelta = false) as alertas_activas, (SELECT COUNT(*) FROM alerta WHERE severidad IN ('critica','alta') AND resuelta = false) as alertas_criticas, (SELECT COUNT(*) FROM evento_riego WHERE completado = true AND fecha_hora >= NOW() - INTERVAL '24 hours') as riegos_completados, (SELECT ROUND(AVG(lamina_aplicada_mm::numeric),1) FROM evento_riego WHERE completado = true AND fecha_hora >= NOW() - INTERVAL '24 hours') as lamina_promedio_mm, (SELECT ROUND(rendimiento_estimado_kg_ha::numeric,0) FROM prediccion_rendimiento ORDER BY generado_en DESC LIMIT 1) as ultima_prediccion, (SELECT ROUND(confianza_porcentaje::numeric,1) FROM prediccion_rendimiento ORDER BY generado_en DESC LIMIT 1) as confianza_prediccion, (SELECT COUNT(*) FROM temporada WHERE estado = 'activa') as temporadas_activas, (SELECT nombre FROM finca LIMIT 1) as nombre_finca, (SELECT email FROM usuario LIMIT 1) as email_destino, (SELECT nombre FROM usuario LIMIT 1) as nombre_usuario;",
+        "options": {}
+      },
+      "id": "dce47d0d-d4a0-4b6d-a7d3-a7b3077cc747",
+      "name": "PostgreSQL — Estadísticas del día",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -3120,
+        2000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.tipo, a.severidad, a.mensaje, l.nombre as lote_nombre, TO_CHAR(a.generada_en, 'HH24:MI') as hora FROM alerta a JOIN lote l ON a.lote_id = l.id WHERE a.resuelta = false ORDER BY CASE a.severidad WHEN 'critica' THEN 1 WHEN 'alta' THEN 2 WHEN 'media' THEN 3 ELSE 4 END, a.generada_en DESC LIMIT 5;",
+        "options": {}
+      },
+      "id": "dc0368f3-0f70-40b6-8b73-2177ac312b6c",
+      "name": "PostgreSQL — Top 5 alertas activas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -2880,
+        2000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combinar estadísticas con alertas\nconst stats = $('PostgreSQL — Estadísticas del día').first().json;\nconst alertas = $('PostgreSQL — Top 5 alertas activas').all().map(i => i.json);\n\nconst colorSeveridad = {\n  critica: '#ef4444',\n  alta: '#f97316',\n  media: '#f59e0b',\n  baja: '#3b82f6'\n};\n\nconst htmlAlertas = alertas.length === 0\n  ? '<p style=\"color:#4ade80;text-align:center;padding:16px\">✅ Sin alertas activas</p>'\n  : alertas.map(a => `\n    <tr>\n      <td style=\"padding:8px;border-bottom:1px solid #1e293b\">\n        <span style=\"background:${colorSeveridad[a.severidad] || '#64748b'}22;color:${colorSeveridad[a.severidad] || '#64748b'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold\">\n          ${a.severidad.toUpperCase()}\n        </span>\n       </td>\n      <td style=\"padding:8px;border-bottom:1px solid #1e293b;color:#94a3b8\">${a.lote_nombre}</td>\n      <td style=\"padding:8px;border-bottom:1px solid #1e293b;font-size:12px\">${a.mensaje}</td>\n      <td style=\"padding:8px;border-bottom:1px solid #1e293b;color:#64748b;font-size:11px\">${a.hora}</td>\n     </tr>`).join('');\n\nconst estadoSistema = parseInt(stats.alertas_criticas) > 0\n  ? { emoji: '🔴', texto: 'ATENCIÓN REQUERIDA', color: '#ef4444' }\n  : parseInt(stats.alertas_activas) > 0\n  ? { emoji: '🟡', texto: 'MONITOREAR', color: '#f59e0b' }\n  : { emoji: '🟢', texto: 'NORMAL', color: '#4ade80' };\n\n// --- Generar bloque de confianza condicional ---\nlet htmlConfianza = '';\nif (stats.confianza_prediccion && stats.confianza_prediccion !== 'null') {\n  htmlConfianza = `<div style=\"font-size: 12px; margin-top: 8px;\">Confianza: ${stats.confianza_prediccion}%</div>`;\n}\n\nreturn [{\n  json: {\n    ...stats,\n    html_alertas: htmlAlertas,\n    estado_sistema: estadoSistema,\n    fecha_hoy: new Date().toLocaleDateString('es-PE', {weekday:'long', year:'numeric', month:'long', day:'numeric'}),\n    hora_generacion: new Date().toLocaleTimeString('es-PE'),\n    html_confianza: htmlConfianza   // ← NUEVA variable\n  }\n}];"
+      },
+      "id": "f9a23429-9799-4fa6-b4ee-0ad2d825dfd9",
+      "name": "Function — Armar datos del reporte",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reportes@agriflow.pe",
+        "toEmail": "rbvelasquezga@unitru.edu.pe",
+        "subject": "=📊 Reporte Diario AgriFlow — {{ $json.fecha_hoy }}",
+        "emailFormat": "html",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Reporte Diario - AgriFlow</title>\n  <style>\n    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');\n    * {\n      margin: 0;\n      padding: 0;\n      box-sizing: border-box;\n    }\n    body {\n      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n      background-color: #f8fafc;\n      margin: 0;\n      padding: 40px 20px;\n      color: #020617;\n    }\n    .container {\n      max-width: 680px;\n      margin: 0 auto;\n      background: #ffffff;\n      border-radius: 32px;\n      overflow: hidden;\n      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);\n      border: 1px solid #e2e8f0;\n    }\n    .header {\n      background: linear-gradient(135deg, #020617 0%, #1e293b 100%);\n      padding: 36px 32px;\n      text-align: center;\n    }\n    .header h1 {\n      font-size: 28px;\n      font-weight: 800;\n      margin: 0;\n      color: #ffffff;\n      letter-spacing: -1px;\n    }\n    .header p {\n      font-size: 12px;\n      margin-top: 8px;\n      text-transform: uppercase;\n      letter-spacing: 2px;\n      color: #10b981;\n      font-weight: 700;\n    }\n    .content {\n      padding: 40px 32px;\n    }\n    .saludo {\n      font-size: 16px;\n      font-weight: 600;\n      margin-bottom: 4px;\n    }\n    .subtitulo {\n      color: #475569;\n      margin-bottom: 24px;\n      font-size: 14px;\n    }\n    .stats-grid {\n      display: grid;\n      grid-template-columns: repeat(2, 1fr);\n      gap: 16px;\n      margin-bottom: 32px;\n    }\n    .stat-card {\n      background: #f8fafc;\n      border-radius: 20px;\n      padding: 20px 16px;\n      text-align: center;\n      transition: transform 0.1s ease;\n      border: 1px solid #eef2ff;\n    }\n    .stat-value {\n      font-size: 32px;\n      font-weight: 800;\n      color: #0f172a;\n      line-height: 1.2;\n    }\n    .stat-label {\n      font-size: 11px;\n      font-weight: 600;\n      color: #64748b;\n      text-transform: uppercase;\n      margin-top: 8px;\n      letter-spacing: 0.5px;\n    }\n    .stat-unit {\n      font-size: 10px;\n      color: #94a3b8;\n    }\n    .prediction-card {\n      background: #f0fdf4;\n      border: 1px solid #bbf7d0;\n      border-radius: 20px;\n      padding: 20px;\n      margin: 20px 0;\n      text-align: center;\n    }\n    .prediction-card h3 {\n      font-size: 14px;\n      font-weight: 700;\n      color: #15803d;\n      margin-bottom: 8px;\n    }\n    .prediction-value {\n      font-size: 28px;\n      font-weight: 800;\n      color: #16a34a;\n    }\n    .alertas-table {\n      width: 100%;\n      border-collapse: collapse;\n      margin: 20px 0 10px;\n      font-size: 13px;\n    }\n    .alertas-table th {\n      text-align: left;\n      padding: 12px 8px;\n      background: #f1f5f9;\n      color: #334155;\n      font-weight: 600;\n      border-bottom: 2px solid #e2e8f0;\n    }\n    .alertas-table td {\n      padding: 12px 8px;\n      border-bottom: 1px solid #eef2f6;\n      color: #475569;\n    }\n    .severity-badge {\n      display: inline-block;\n      padding: 4px 10px;\n      border-radius: 40px;\n      font-size: 10px;\n      font-weight: 700;\n    }\n    .button-group {\n      display: flex;\n      justify-content: center;\n      gap: 16px;\n      flex-wrap: wrap;\n      margin: 32px 0 16px;\n    }\n    .btn {\n      padding: 12px 24px;\n      border-radius: 40px;\n      text-decoration: none;\n      font-weight: 600;\n      font-size: 13px;\n      display: inline-block;\n      transition: 0.2s;\n    }\n    .btn-primary {\n      background: #020617;\n      color: white;\n      border: 1px solid #1e293b;\n    }\n    .btn-warning {\n      background: #ef4444;\n      color: white;\n    }\n    .btn-success {\n      background: #10b981;\n      color: white;\n    }\n    .footer {\n      background: #f8fafc;\n      padding: 24px;\n      text-align: center;\n      font-size: 11px;\n      color: #64748b;\n      border-top: 1px solid #e2e8f0;\n      margin-top: 10px;\n    }\n    @media (max-width: 560px) {\n      .stats-grid {\n        grid-template-columns: 1fr;\n        gap: 12px;\n      }\n      .content {\n        padding: 24px 20px;\n      }\n    }\n  </style>\n</head>\n<body>\n<div class=\"container\">\n  <div class=\"header\">\n    <h1>📊 Reporte Diario</h1>\n    <p>AgriFlow · Agricultura de Precisión</p>\n  </div>\n  <div class=\"content\">\n    <p class=\"saludo\">Buenos días, <strong>{{ $json.nombre_usuario }}</strong> 👋</p>\n    <p class=\"subtitulo\">Resumen operativo de <strong>{{ $json.nombre_finca }}</strong> — {{ $json.fecha_hoy }}</p>\n\n    <!-- KPIs principales -->\n    <div class=\"stats-grid\">\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.lecturas_24h || 0 }}</div>\n        <div class=\"stat-label\">📡 Lecturas 24h</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.anomalias_24h || 0 }}</div>\n        <div class=\"stat-label\">🔍 Anomalías</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.alertas_activas || 0 }}</div>\n        <div class=\"stat-label\">⚠️ Alertas activas</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.riegos_completados || 0 }}</div>\n        <div class=\"stat-label\">💧 Riegos completados</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.temporadas_activas || 0 }}</div>\n        <div class=\"stat-label\">🌱 Temporadas activas</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-value\">{{ $json.lamina_promedio_mm || '—' }} <span class=\"stat-unit\">mm</span></div>\n        <div class=\"stat-label\">💧 Lámina promedio</div>\n      </div>\n    </div>\n\n    <!-- Predicción ML (bloque completo, con confianza condicional) -->\n    <div class=\"prediction-card\">\n      <h3>🤖 Predicción de rendimiento (última)</h3>\n      <div class=\"prediction-value\">{{ $json.ultima_prediccion || 'No disponible' }} kg/ha</div>\n      {{ $json.html_confianza }}\n    </div>\n\n    <!-- Tabla de alertas activas (top 5) -->\n    <h3 style=\"font-size: 15px; font-weight: 700; margin: 24px 0 12px;\">⚠️ Alertas activas (prioritarias)</h3>\n    <table class=\"alertas-table\">\n      <thead>\n        <tr><th>Severidad</th><th>Lote</th><th>Mensaje</th><th>Hora</th></tr>\n      </thead>\n      <tbody>\n        {{ $json.html_alertas }}\n      </tbody>\n    </table>\n  </div>\n  <div class=\"footer\">\n    <p>Reporte automático generado el {{ $json.fecha_hoy }} a las {{ $json.hora_generacion }}</p>\n    <p>© 2026 AgriFlow · La Libertad, Perú</p>\n  </div>\n</div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "3e80f172-d4c4-4ad4-a42a-af5e9242ae65",
+      "name": "Email — Reporte diario completo",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        2000
+      ],
+      "webhookId": "6f14c6ce-788f-47ec-8c24-25d46baf9ef6",
+      "credentials": {
+        "smtp": {
+          "id": "4o5aKisPESHfwKbd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO workflow_ejecucion (nombre_workflow, estado, finalizado_en, metadata) VALUES ('reporte_diario_email', 'exitoso', NOW(), '{\"tipo\": \"reporte_diario\"}'::jsonb);",
+        "options": {}
+      },
+      "id": "66fdf48d-0efe-495f-ba68-0fd64df1e75b",
+      "name": "PostgreSQL — Log reporte enviado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        2160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron — 7:00 AM diario": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL — Estadísticas del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL — Estadísticas del día": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL — Top 5 alertas activas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL — Top 5 alertas activas": {
+      "main": [
+        [
+          {
+            "node": "Function — Armar datos del reporte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function — Armar datos del reporte": {
+      "main": [
+        [
+          {
+            "node": "Email — Reporte diario completo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "PostgreSQL — Log reporte enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f2aeb8f058c6afec8839533c431ec6672d3411b777dd919989afb9773ad72b3b"
+  }
+}

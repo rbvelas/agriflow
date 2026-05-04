@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Paleta Accesible WCAG 2.1 AA */
+    --background: 210 40% 98%;      /* #f8fafc - Fondo principal suave */
+    --foreground: 222 47% 5%;       /* #020617 - Texto principal de alto contraste (20:1) */
+    
+    --card: 0 0% 100%;             /* #ffffff - Fondo de tarjetas */
+    --card-foreground: 222 47% 5%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 5%;
+    
+    --primary: 161 94% 25%;         /* #047857 - Emerald 700: Color primario (6.4:1 sobre blanco) */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 215 25% 27%;       /* #1e293b - Slate 800: Navegación y elementos secundarios */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 215 16% 34%;           /* #475569 - Slate 600: Texto de apoyo/deshabilitado (6.8:1) */
+    --muted-foreground: 215 16% 34%;
+    
+    --accent: 210 40% 96.1%;        /* #f1f5f9 - Slate 100: Fondo de elementos activos/hover */
+    --accent-foreground: 222 47% 11.2%;
+    
+    --destructive: 0 84.2% 45%;     /* #b91c1c - Rojo accesible para errores/alertas */
+    --destructive-foreground: 210 40% 98%;
+    
+    --border: 214 32% 80%;          /* #cbd5e1 - Bordes visibles */
+    --input: 214 32% 80%;
+    --ring: 161 94% 25%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground selection:bg-primary/20;
+  }
+  /* Scrollbar moderna y discreta */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full border-2 border-transparent bg-clip-padding;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
+  }
+}
+
+/* Animaciones de entrada */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Pulso suave para métricas cargando */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.8; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 1.5s ease-in-out infinite;
+}

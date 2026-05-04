@@ -1,0 +1,269 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "f5c3df15-fe19-480d-ab6b-07c1181c5412",
+      "name": "Cron — Cada 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -3360,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id, a.tipo, a.severidad, a.mensaje, a.generada_en, l.nombre as lote_nombre, f.nombre as finca_nombre, f.municipio, f.departamento FROM alerta a JOIN lote l ON a.lote_id = l.id JOIN finca f ON l.finca_id = f.id WHERE a.resuelta = false AND a.reconocida_en IS NULL AND a.generada_en >= NOW() - INTERVAL '15 minutes' ORDER BY a.generada_en DESC;",
+        "options": {}
+      },
+      "id": "e64a8864-a811-4786-8c3b-f6cfa81b964d",
+      "name": "PostgreSQL — Alertas nuevas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -3120,
+        1168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const alertas = $input.all().map(i => i.json);\n\nif (alertas.length === 0) {\n  return [{ json: { sin_alertas: true, total: 0 } }];\n}\n\n// Separar por severidad\nconst criticas = alertas.filter(a => a.severidad === 'critica' || a.severidad === 'alta');\nconst bajas    = alertas.filter(a => a.severidad === 'media'   || a.severidad === 'baja');\n\nconst resumen = {\n  sin_alertas: false,\n  total: alertas.length,\n  criticas_count: criticas.length,\n  bajas_count: bajas.length,\n  hay_criticas: criticas.length > 0,\n  // Construir HTML para email de críticas\n  html_criticas: criticas.map(a => `\n    <tr>\n      <td style=\"padding:8px;border-bottom:1px solid #333;\">\n        <strong style=\"color:#ef4444\">${a.severidad.toUpperCase()}</strong>\n      </td>\n      <td style=\"padding:8px;border-bottom:1px solid #333;\">${a.lote_nombre} — ${a.finca_nombre}</td>\n      <td style=\"padding:8px;border-bottom:1px solid #333;\">${a.tipo}</td>\n      <td style=\"padding:8px;border-bottom:1px solid #333;\">${a.mensaje}</td>\n      <td style=\"padding:8px;border-bottom:1px solid #333;color:#94a3b8;font-size:11px\">${new Date(a.generada_en).toLocaleString('es-PE')}</td>\n    </tr>`).join(''),\n  // Construir HTML para resumen de bajas\n  html_bajas: bajas.map(a => `\n    <li style=\"margin-bottom:6px;color:#94a3b8\">\n      <strong style=\"color:#f59e0b\">${a.severidad.toUpperCase()}</strong> — \n      ${a.lote_nombre}: ${a.mensaje}\n    </li>`).join('')\n};\n\nreturn [{ json: resumen }];"
+      },
+      "id": "53e0ad74-00f0-4530-8e83-81476cbd0bfa",
+      "name": "Function — Clasificar alertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2880,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "57dc1a6e-c3ca-4714-afc0-eaa55a6fef56",
+              "leftValue": "={{ $json.sin_alertas }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9835be3e-00df-4fc4-ab1a-79573d3cdfdb",
+      "name": "IF — ¿Sin alertas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "26f9ff14-f10e-45e1-bcbd-16c0ab627bf8",
+              "leftValue": "={{ $json.hay_criticas }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8fe2c985-b09d-4ae1-87ac-3dc33f8fa3c7",
+      "name": "IF — ¿Hay críticas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO workflow_ejecucion (nombre_workflow, estado, finalizado_en, metadata) VALUES ('alertas_email', 'exitoso', NOW(), '{\"resultado\": \"sin_alertas_nuevas\"}'::jsonb);",
+        "options": {}
+      },
+      "id": "9f863e78-ec50-4e3c-b315-b025c8efcff3",
+      "name": "PostgreSQL — Log sin alertas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        1280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertas@agriflow.pe",
+        "toEmail": "rbvelasquezga@unitru.edu.pe",
+        "subject": "=⚠️ AgriFlow — {{ $json.bajas_count }} alerta(s) de nivel medio/bajo",
+        "options": {}
+      },
+      "id": "d14b0794-4b65-4aff-9e44-b7a35b0b920a",
+      "name": "Email — Resumen alertas bajas",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        1168
+      ],
+      "webhookId": "7481bcfb-8b45-4c19-a4e8-cc1340e8b758",
+      "credentials": {
+        "smtp": {
+          "id": "4o5aKisPESHfwKbd",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertas@agriflow.pe",
+        "toEmail": "rbvelasquezga@unitru.edu.pe",
+        "subject": "=🚨 ALERTA CRÍTICA AgriFlow — {{ $json.criticas_count }} alerta(s) urgente(s)",
+        "emailFormat": "html",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Alerta AgriFlow</title>\n  <style>\n    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');\n    body {\n      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n      background-color: #f8fafc;\n      margin: 0;\n      padding: 40px 20px;\n      color: #020617;\n    }\n    .container {\n      max-width: 640px;\n      margin: 0 auto;\n      background: #ffffff;\n      border-radius: 32px; /* Coincide con rounded-[2rem] del frontend */\n      overflow: hidden;\n      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);\n      border: 1px solid #e2e8f0;\n    }\n    .header {\n      background: linear-gradient(135deg, #020617 0%, #1e293b 100%);\n      padding: 40px 32px;\n      text-align: center;\n      position: relative;\n    }\n    .header h1 {\n      font-size: 28px;\n      font-weight: 800;\n      margin: 0;\n      color: #ffffff;\n      letter-spacing: -1px;\n    }\n    .header p {\n      font-size: 12px;\n      margin-top: 8px;\n      text-transform: uppercase;\n      letter-spacing: 2px;\n      color: #10b981; /* Emerald 500 */\n      font-weight: 700;\n    }\n    .content {\n      padding: 40px 32px;\n    }\n    .stats-grid {\n      display: table;\n      width: 100%;\n      margin-bottom: 32px;\n      border-spacing: 12px 0;\n    }\n    .stat-card {\n      display: table-cell;\n      background: #f1f5f9;\n      padding: 20px;\n      border-radius: 20px;\n      text-align: center;\n      width: 33%;\n    }\n    .stat-val {\n      font-size: 24px;\n      font-weight: 800;\n      color: #047857; /* Emerald 700 */\n    }\n    .stat-label {\n      font-size: 10px;\n      font-weight: 700;\n      color: #64748b;\n      text-transform: uppercase;\n      margin-top: 4px;\n    }\n    table {\n      width: 100%;\n      border-collapse: separate;\n      border-spacing: 0;\n      margin: 24px 0;\n    }\n    th {\n      text-align: left;\n      font-size: 11px;\n      font-weight: 800;\n      text-transform: uppercase;\n      color: #94a3b8;\n      padding: 12px;\n      border-bottom: 2px solid #f1f5f9;\n    }\n    td {\n      padding: 16px 12px;\n      font-size: 13px;\n      border-bottom: 1px solid #f1f5f9;\n      color: #334155;\n    }\n    .badge-critical {\n      background: #fee2e2;\n      color: #b91c1c;\n      padding: 4px 10px;\n      border-radius: 99px;\n      font-weight: 800;\n      font-size: 10px;\n    }\n    .btn-container {\n      text-align: center;\n      margin-top: 40px;\n    }\n    .btn {\n      background: #020617; /* Slate 950 */\n      color: #ffffff !important;\n      text-decoration: none;\n      padding: 18px 40px;\n      border-radius: 20px;\n      font-weight: 700;\n      font-size: 15px;\n      display: inline-block;\n      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);\n    }\n    .footer {\n      background: #f8fafc;\n      padding: 32px;\n      text-align: center;\n      border-top: 1px solid #f1f5f9;\n    }\n    .footer p {\n      font-size: 11px;\n      color: #94a3b8;\n      margin: 4px 0;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🚨 ALERTA DETECTADA</h1>\n      <p>AgriFlow · Gestión Hídrica Inteligente</p>\n    </div>\n    <div class=\"content\">\n      <div class=\"stats-grid\">\n        <div class=\"stat-card\">\n          <div class=\"stat-val\">{{ $json.criticas_count }}</div>\n          <div class=\"stat-label\">Urgentes</div>\n        </div>\n        <div class=\"stat-card\">\n          <div class=\"stat-val\">{{ $json.total }}</div>\n          <div class=\"stat-label\">Total Activas</div>\n        </div>\n        <div class=\"stat-card\">\n          <div class=\"stat-val\">15m</div>\n          <div class=\"stat-label\">Ventana</div>\n        </div>\n      </div>\n\n      <p style=\"font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 8px;\">Detalle de incidencias registradas:</p>\n      <table>\n        <thead>\n          <tr>\n            <th>Nivel</th>\n            <th>Ubicación</th>\n            <th>Mensaje</th>\n          </tr>\n        </thead>\n        <tbody>\n          {{ $json.html_criticas }}\n        </tbody>\n      </table>\n\n      <div class=\"btn-container\">\n        <a href=\"http://localhost:3000/alertas\" class=\"btn\">Ver en el Dashboard →</a>\n      </div>\n    </div>\n    <div class=\"footer\">\n      <p>Este mensaje fue generado automáticamente por el motor de análisis AgriFlow.</p>\n      <p>© 2026 AgriFlow · Tecnología para el campo</p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "2d9dc8d7-e07b-4c5a-b7dd-b0009be65306",
+      "name": "Email — Alerta CRÍTICA (inmediato)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        944
+      ],
+      "webhookId": "01fd2134-9518-4af6-823d-1fa77f336f5a",
+      "credentials": {
+        "smtp": {
+          "id": "4o5aKisPESHfwKbd",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron — Cada 15 min": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL — Alertas nuevas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL — Alertas nuevas": {
+      "main": [
+        [
+          {
+            "node": "Function — Clasificar alertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function — Clasificar alertas": {
+      "main": [
+        [
+          {
+            "node": "IF — ¿Sin alertas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF — ¿Sin alertas?": {
+      "main": [
+        [
+          {
+            "node": "IF — ¿Hay críticas?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PostgreSQL — Log sin alertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF — ¿Hay críticas?": {
+      "main": [
+        [
+          {
+            "node": "Email — Alerta CRÍTICA (inmediato)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email — Resumen alertas bajas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f2aeb8f058c6afec8839533c431ec6672d3411b777dd919989afb9773ad72b3b"
+  }
+}

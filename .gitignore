@@ -1,0 +1,48 @@
+# ── Node.js ──────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# ── Next.js ──────────────────────────────────────────
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# ── NestJS / Backend ─────────────────────────────────
+backend/dist/
+backend/node_modules/
+
+# ── Python / ML Service ──────────────────────────────
+ml-service/venv/
+ml-service/__pycache__/
+ml-service/model/*.pkl
+ml-service/.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Variables de entorno (NUNCA subir) ───────────────
+.env
+.env.local
+.env.production
+.env.development
+backend/.env
+frontend/.env.local
+ml-service/.env
+
+# ── Reportes generados ───────────────────────────────
+backend/reportes_pdf/
+
+# ── Logs ─────────────────────────────────────────────
+*.log
+logs/
+
+# ── Sistema operativo ────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDEs ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp

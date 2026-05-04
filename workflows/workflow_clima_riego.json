@@ -1,0 +1,220 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 5 * * *"
+            }
+          ]
+        }
+      },
+      "id": "475aa32c-2bda-4d99-a24f-8b2ebeaa7318",
+      "name": "Cron — 5:00 AM diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -3360,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT f.id as finca_id, f.nombre as finca_nombre, f.municipio, f.departamento, f.latitud, f.longitud, u.email as email_propietario, u.nombre as nombre_propietario FROM finca f JOIN usuario u ON f.propietario_id = u.id WHERE f.latitud IS NOT NULL AND f.longitud IS NOT NULL;",
+        "options": {}
+      },
+      "id": "dc962827-c292-4f93-8a33-bebc9b640ae8",
+      "name": "PostgreSQL — Obtener fincas con coordenadas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -3120,
+        1664
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.open-meteo.com/v1/forecast?latitude={{$json.latitud}}&longitude={{$json.longitud}}&hourly=rain,precipitation_probability&forecast_days=1",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "43c81e3e-0bbc-4970-b03b-43c19512be4d",
+      "name": "HTTP — OpenWeatherMap Pronóstico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -2880,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const clima = $json;\nconst finca = $('PostgreSQL — Obtener fincas con coordenadas').item.json;\n\nif (!clima.hourly || clima.hourly.time.length === 0) {\n  return [{ json: { skip: true, razon: 'Sin datos horarios' } }];\n}\n\n// Tomar primeras 4 horas (12h)\nconst periodos = clima.hourly.time.slice(0, 4).map((time, index) => ({\n    tiempo: time,\n    probLluvia: clima.hourly.precipitation_probability[index],\n    lluvia_mm: clima.hourly.rain[index]\n}));\n\nconst maxLluvia = Math.max(...periodos.map(p => p.probLluvia));\nconst precipTotal = periodos.reduce((sum, p) => sum + p.lluvia_mm, 0);\nconst hayLluvia = maxLluvia >= 80;\nconst lluviaModerada = maxLluvia >= 40 && maxLluvia < 80;\n\nconst recomendacion = hayLluvia\n  ? 'NO_REGAR — Lluvia prevista (>' + Math.round(maxLluvia) + '% probabilidad)'\n  : lluviaModerada\n  ? 'REGAR_POCO — Lluvia moderada posible (' + Math.round(maxLluvia) + '%)'\n  : 'REGAR_NORMAL — Sin lluvia prevista';\n\n// --- Generar título dinámico y bloque de ahorro ---\nconst titulo_riego = hayLluvia ? '✅ Suspender riego hoy' : '💧 Recomendación de riego';\n\nlet html_ahorro = '';\nif (hayLluvia) {\n  const ahorro = precipTotal.toFixed(1);\n  html_ahorro = `<p style=\"margin: 12px 0 0; font-size: 13px; color: #15803d;\">💰 Ahorro estimado: ${ahorro} mm de agua</p>`;\n}\n\nreturn [{\n  json: {\n    finca_id: finca.finca_id,\n    finca_nombre: finca.finca_nombre,\n    municipio: finca.municipio,\n    departamento: finca.departamento,\n    email_propietario: finca.email_propietario,\n    nombre_propietario: finca.nombre_propietario,\n    probabilidad_lluvia: Math.round(maxLluvia),\n    precipitacion_esperada_mm: Math.round(precipTotal * 10) / 10,\n    temperatura_promedio: null,\n    descripcion_clima: \"Pronóstico Open-Meteo\",\n    hay_lluvia: hayLluvia,\n    lluvia_moderada: lluviaModerada,\n    recomendacion_riego: recomendacion,\n    ahorro_estimado_mm: hayLluvia ? precipTotal.toFixed(1) : '0',\n    titulo_riego: titulo_riego,\n    html_ahorro: html_ahorro,\n    skip: false\n  }\n}];"
+      },
+      "id": "52e5a8ec-6606-44a4-b8dc-c262320fee56",
+      "name": "Function — Analizar pronóstico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "f1c632a4-f301-4a2d-9b22-9785ad5c7786",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ccf50982-22b4-4ff0-bd04-3ed509c4d9da",
+      "name": "IF — ¿Datos válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO workflow_ejecucion (nombre_workflow, estado, finalizado_en, metadata) VALUES ('clima_riego', 'exitoso', NOW(), '{\"finca\": \"{{ $json.finca_nombre }}\", \"probabilidad_lluvia\": {{ $json.probabilidad_lluvia }}, \"recomendacion\": \"{{ $json.recomendacion_riego }}\"}'::jsonb);",
+        "options": {}
+      },
+      "id": "66ed0ac8-ca78-4887-be08-733a43ffe2ed",
+      "name": "PostgreSQL — Log clima",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        1776
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qN0GqHbkxModstak",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertas@agriflow.pe",
+        "toEmail": "rbvelasquezga@unitru.edu.pe",
+        "subject": "=🌤️ AgriFlow — Pronóstico del día para {{ $json.finca_nombre }}",
+        "emailFormat": "html",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Pronóstico AgriFlow</title>\n  <style>\n    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');\n    body {\n      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n      background-color: #f8fafc;\n      margin: 0;\n      padding: 40px 20px;\n      color: #020617;\n    }\n    .container {\n      max-width: 640px;\n      margin: 0 auto;\n      background: #ffffff;\n      border-radius: 32px;\n      overflow: hidden;\n      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);\n      border: 1px solid #e2e8f0;\n    }\n    .header {\n      background: linear-gradient(135deg, #020617 0%, #1e293b 100%);\n      padding: 40px 32px;\n      text-align: center;\n    }\n    .header h1 {\n      font-size: 28px;\n      font-weight: 800;\n      margin: 0;\n      color: #ffffff;\n      letter-spacing: -1px;\n    }\n    .header p {\n      font-size: 12px;\n      margin-top: 8px;\n      text-transform: uppercase;\n      letter-spacing: 2px;\n      color: #10b981;\n      font-weight: 700;\n    }\n    .content {\n      padding: 40px 32px;\n    }\n    .stats-grid {\n      display: table;\n      width: 100%;\n      margin-bottom: 32px;\n      border-spacing: 12px 0;\n    }\n    .stat-card {\n      display: table-cell;\n      background: #f1f5f9;\n      padding: 20px;\n      border-radius: 20px;\n      text-align: center;\n      width: 33%;\n    }\n    .stat-val {\n      font-size: 28px;\n      font-weight: 800;\n      color: #047857;\n    }\n    .stat-label {\n      font-size: 10px;\n      font-weight: 700;\n      color: #64748b;\n      text-transform: uppercase;\n      margin-top: 4px;\n    }\n    .highlight-box {\n      background: #f1f5f9;\n      border-radius: 24px;\n      padding: 24px;\n      margin: 24px 0;\n      text-align: center;\n    }\n    .riego-recomendacion {\n      background: #fef9e6;\n      border-left: 6px solid #d97706;\n      padding: 20px;\n      border-radius: 16px;\n      margin: 30px 0;\n    }\n    .btn-container {\n      text-align: center;\n      margin-top: 40px;\n    }\n    .btn {\n      background: #020617;\n      color: #ffffff !important;\n      text-decoration: none;\n      padding: 16px 32px;\n      border-radius: 20px;\n      font-weight: 700;\n      font-size: 14px;\n      display: inline-block;\n      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);\n    }\n    .footer {\n      background: #f8fafc;\n      padding: 32px;\n      text-align: center;\n      border-top: 1px solid #f1f5f9;\n    }\n    .footer p {\n      font-size: 11px;\n      color: #94a3b8;\n      margin: 4px 0;\n    }\n    .small-note {\n      font-size: 12px;\n      color: #475569;\n      margin-top: 20px;\n    }\n  </style>\n</head>\n<body>\n<div class=\"container\">\n  <div class=\"header\">\n    <h1>🌾 PRONÓSTICO DE RIEGO</h1>\n    <p>AgriFlow · Decisión Inteligente</p>\n  </div>\n  <div class=\"content\">\n    <p style=\"font-size: 16px; font-weight: 600; margin-bottom: 4px;\">Buenos días, <strong>{{ $json.nombre_propietario }}</strong> 👋</p>\n    <p style=\"color: #475569; margin-bottom: 24px;\">Resumen climático y recomendación para <strong>{{ $json.finca_nombre }}</strong> ({{ $json.municipio }}, {{ $json.departamento }}).</p>\n\n    <!-- Tarjetas -->\n    <div class=\"stats-grid\">\n      <div class=\"stat-card\">\n        <div class=\"stat-val\">{{ $json.probabilidad_lluvia }}%</div>\n        <div class=\"stat-label\">Prob. lluvia</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-val\">{{ $json.precipitacion_esperada_mm }} mm</div>\n        <div class=\"stat-label\">Precip. esperada</div>\n      </div>\n      <div class=\"stat-card\">\n        <div class=\"stat-val\">{{ $json.temperatura_promedio ?? '—' }}°C</div>\n        <div class=\"stat-label\">Temperatura</div>\n      </div>\n    </div>\n\n    <div class=\"highlight-box\">\n      🌤️ <strong>Condición:</strong> {{ $json.descripcion_clima }}\n    </div>\n\n    <!-- Recomendación de riego -->\n    <div class=\"riego-recomendacion\">\n      <p style=\"font-weight: 800; margin: 0 0 8px; font-size: 16px; color: #92400e;\">\n        {{ $json.titulo_riego }}\n      </p>\n      <p style=\"margin: 0; color: #78350f;\">{{ $json.recomendacion_riego }}</p>\n      {{ $json.html_ahorro }}\n    </div>\n\n    <div class=\"btn-container\">\n      <a href=\"http://localhost:3000/riegos\" class=\"btn\">💧 Ir a Módulo de Riego →</a>\n    </div>\n\n    <div class=\"small-note\">\n      ⚡ Datos basados en modelo horario (sin suscripción, libre). Decisión según probabilidad de lluvia y precipitación esperada.\n    </div>\n  </div>\n  <div class=\"footer\">\n    <p>Este mensaje es automático. No responder.</p>\n    <p>© 2026 AgriFlow · Tecnología para el campo</p>\n  </div>\n</div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "878dea11-469f-4596-984c-2bb0f1531eef",
+      "name": "Email — Pronóstico y recomendación de riego",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        1552
+      ],
+      "webhookId": "4bcca211-6667-436b-bb9f-67dd99cdcdf7",
+      "credentials": {
+        "smtp": {
+          "id": "4o5aKisPESHfwKbd",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron — 5:00 AM diario": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL — Obtener fincas con coordenadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL — Obtener fincas con coordenadas": {
+      "main": [
+        [
+          {
+            "node": "HTTP — OpenWeatherMap Pronóstico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — OpenWeatherMap Pronóstico": {
+      "main": [
+        [
+          {
+            "node": "Function — Analizar pronóstico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function — Analizar pronóstico": {
+      "main": [
+        [
+          {
+            "node": "IF — ¿Datos válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF — ¿Datos válidos?": {
+      "main": [
+        [
+          {
+            "node": "Email — Pronóstico y recomendación de riego",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "PostgreSQL — Log clima",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f2aeb8f058c6afec8839533c431ec6672d3411b777dd919989afb9773ad72b3b"
+  }
+}
