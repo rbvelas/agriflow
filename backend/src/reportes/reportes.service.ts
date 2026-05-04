@@ -94,11 +94,17 @@ export class ReportesService {
         `reporte_${reporte.id}.pdf`,
       );
 
+      const isProduction = process.env.NODE_ENV === 'production';
+
       const browser = await puppeteer.launch({
-        args: chromium.args,
+        args: isProduction
+          ? chromium.args
+          : ['--no-sandbox', '--disable-setuid-sandbox'],
         defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: true,
+        executablePath: isProduction
+          ? await chromium.executablePath()
+          : (process.env.PUPPETEER_EXECUTABLE_PATH ?? undefined),
+        headless: isProduction ? chromium.headless : true,
       });
 
       const page = await browser.newPage();
