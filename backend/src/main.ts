@@ -25,6 +25,8 @@ async function bootstrap() {
       /\.vercel\.app$/,
     ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   const port = parseInt(process.env.PORT ?? '3001', 10);

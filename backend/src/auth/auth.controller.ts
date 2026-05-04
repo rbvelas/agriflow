@@ -54,4 +54,10 @@ export class AuthController {
     const perfil = await this.authService.obtenerPerfil(req.user.id);
     return { data: perfil, error: null };
   }
+
+    /** GET /api/auth/health — verificar que el backend está activo */
+  @Get('health')
+  health() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
 }
