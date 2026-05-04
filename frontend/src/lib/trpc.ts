@@ -5,12 +5,14 @@ import { httpBatchLink } from '@trpc/client';
 export const trpc = createTRPCReact<any>();
 
 export function getTrpcClient() {
+  // En producción apunta directo al backend de Render
+  // En desarrollo usa localhost
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: typeof window !== 'undefined'
-          ? '/trpc'
-          : `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/trpc`,
+        url: `${apiUrl}/trpc`,
         headers: () => {
           const token =
             typeof window !== 'undefined'

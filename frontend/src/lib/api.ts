@@ -1,7 +1,6 @@
-const BASE = typeof window !== 'undefined'
-  ? ''  // en el browser usa rewrites de Next.js
-  : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001');
-  
+// Siempre usar la URL del backend directamente (sin rewrites)
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('agriflow_token');
