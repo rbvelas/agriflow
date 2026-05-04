@@ -73,7 +73,7 @@ export class ReportesService {
       this.reporteRepo.create({
         generado_por: { id: dto.usuarioId } as any,
         finca: dto.fincaId ? ({ id: dto.fincaId } as any) : null,
-        lote: dto.loteId ? ({ id: dto.loteId } as any) : null,
+        //lote: dto.loteId ? ({ id: dto.loteId } as any) : null,
         tipo: dto.tipo,
         periodo_inicio: dto.periodoInicio,
         periodo_fin: dto.periodoFin,
