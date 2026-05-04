@@ -2,26 +2,18 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  typescript: {
-    // Los tipos tRPC se verifican en dev; en Docker build usamos js runtime
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
     return [
       {
-        source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/:path*`,
-      },
-      {
         source: '/trpc/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/trpc/:path*`,
+        destination: `${apiUrl}/trpc/:path*`,
       },
       {
         source: '/api/auth/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/auth/:path*`,
+        destination: `${apiUrl}/api/auth/:path*`,
       },
     ];
   },
