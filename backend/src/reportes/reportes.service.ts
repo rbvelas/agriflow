@@ -5,7 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { Reporte, TipoReporte } from './entities/reporte.entity';
@@ -87,21 +88,17 @@ export class ReportesService {
       const datos = await this.obtenerDatosReporte(dto);
       const html = this.renderizarPlantillaHTML(dto.tipo, datos, reporte.id);
 
-      // Generar PDF con Puppeteer
+      // Generar PDF con Puppeteer + Chromium (compatible con Render)
       const rutaArchivo = path.join(
         this.outputDir,
         `reporte_${reporte.id}.pdf`,
       );
 
       const browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
         headless: true,
-        executablePath:
-          process.env.PUPPETEER_EXECUTABLE_PATH ?? undefined,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-        ],
       });
 
       const page = await browser.newPage();
