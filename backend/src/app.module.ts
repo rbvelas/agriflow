@@ -77,14 +77,20 @@ const ALL_ENTITIES = [
       useFactory: (cfg: ConfigService) => {
         const databaseUrl = cfg.get('DATABASE_URL');
         if (databaseUrl) {
+          const url = new URL(databaseUrl);
+
           return {
             type: 'postgres',
-            url: databaseUrl,
+            host: url.hostname,
+            port: parseInt(url.port) || 6543,
+            username: decodeURIComponent(url.username),
+            password: decodeURIComponent(url.password),
+            database: url.pathname.replace('/', ''),
             entities: ALL_ENTITIES,
             synchronize: false,
             ssl: { rejectUnauthorized: false },
             extra: {
-              ssl: { rejectUnauthorized: false },   // ← clave para forzar
+              ssl: { rejectUnauthorized: false },
             },
             logging: false,
           };
