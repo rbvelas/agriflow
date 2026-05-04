@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
@@ -67,7 +67,9 @@ const C = {
 @Injectable()
 export class ReportesService {
   private readonly logger = new Logger(ReportesService.name);
-  private readonly outputDir = path.join(process.cwd(), 'reportes_pdf');
+  private readonly outputDir = process.env.NODE_ENV === 'production' 
+  ? '/tmp/reportes_pdf' 
+  : path.join(process.cwd(), 'reportes_pdf');
 
   constructor(
     @InjectRepository(Reporte)
