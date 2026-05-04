@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { trpc } from '@/lib/trpc';
+import { api } from '@/lib/api';
 
 interface LoteSelection {
   id: string;
@@ -54,26 +55,7 @@ export function LoteProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const res = await fetch('/api/fincas', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (!res.ok) {
-          if (res.status === 401) {
-            // Token expirado o inválido
-            localStorage.removeItem('agriflow_token');
-            localStorage.removeItem('agriflow_usuario');
-          }
-          throw new Error(`Error ${res.status} al cargar fincas`);
-        }
-
-        // Verificar si la respuesta es JSON antes de parsear
-        const contentType = res.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          throw new Error("La respuesta del servidor no es JSON");
-        }
-
-        const data = await res.json();
+        const data = await api.getFincas();
         
         if (data.data) {
           const todosLosLotes: LoteSelection[] = [];
@@ -104,6 +86,11 @@ export function LoteProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         console.error("Error cargando lotes para contexto:", error);
+        // Si es error de autenticación (401), limpiar token
+        if (error instanceof Error && error.message.includes('401')) {
+          localStorage.removeItem('agriflow_token');
+          localStorage.removeItem('agriflow_usuario');
+        }
       }
     };
 
