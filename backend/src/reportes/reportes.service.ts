@@ -68,8 +68,8 @@ const C = {
 export class ReportesService {
   private readonly logger = new Logger(ReportesService.name);
   private readonly outputDir = process.env.NODE_ENV === 'production' 
-  ? '/tmp/reportes_pdf' 
-  : path.join(process.cwd(), 'reportes_pdf');
+    ? '/tmp/reportes_pdf' 
+    : path.join(process.cwd(), 'reportes_pdf');
 
   constructor(
     @InjectRepository(Reporte)
@@ -121,10 +121,10 @@ export class ReportesService {
       stream.on('error', reject);
 
       const W = doc.page.width;   // 595
-      const M = 28;                // margen lateral
+      const M = 28;               // margen lateral
       const CW = W - M * 2;       // ancho de contenido
 
-      // ── HEADER ──────────────────────────────────────────────
+      // HEADER
       doc.rect(0, 0, W, 72).fill(C.azulOscuro);
 
       doc.fillColor(C.blanco)
@@ -149,9 +149,9 @@ export class ReportesService {
          .text(`Período: ${datos.periodoInicio} — ${datos.periodoFin}`, W - M - 160, 34, { width: 160, align: 'right' })
          .text(`ID: ${reporteId.substring(0, 8).toUpperCase()}`, W - M - 160, 46, { width: 160, align: 'right' });
 
-      let y = 88; // posición vertical actual
+      let y = 88;
 
-      // ── HELPER: sección título ───────────────────────────────
+      // Helper: sección título
       const sectionTitle = (titulo: string) => {
         doc.font('Helvetica-Bold').fontSize(10).fillColor(C.azulOscuro)
            .text(titulo, M, y);
@@ -160,7 +160,7 @@ export class ReportesService {
         y += 10;
       };
 
-      // ── MÉTRICAS ─────────────────────────────────────────────
+      // MÉTRICAS
       sectionTitle('Resumen del Período');
 
       const cards = [
@@ -184,10 +184,9 @@ export class ReportesService {
       });
       y += 66;
 
-      // ── PREDICCIONES ML ──────────────────────────────────────
+      // PREDICCIONES ML
       sectionTitle('Predicciones ML (Ensemble RF+GB+XGB)');
 
-      // Cabecera tabla
       const predCols = [
         { label: 'Fecha',            w: 70 },
         { label: 'Estimado (kg/ha)', w: 100 },
@@ -226,7 +225,7 @@ export class ReportesService {
       });
       y += 14;
 
-      // ── LECTURAS SENSORES ────────────────────────────────────
+      // LECTURAS SENSORES
       sectionTitle('Lecturas de Sensores (Últimas del Período)');
 
       const sensCols = [
@@ -270,7 +269,7 @@ export class ReportesService {
       });
       y += 14;
 
-      // ── EFICIENCIA HÍDRICA (solo gestión/ejecutivo) ──────────
+      // EFICIENCIA HÍDRICA (solo gestión/ejecutivo)
       const esGestion = tipo === 'gestion_mensual' || tipo === 'ejecutivo';
       if (esGestion) {
         sectionTitle('Eficiencia Hídrica');
@@ -292,7 +291,7 @@ export class ReportesService {
         y += 70;
       }
 
-      // ── FOOTER ───────────────────────────────────────────────
+      // FOOTER
       const pageHeight = doc.page.height;
       doc.moveTo(M, pageHeight - 28).lineTo(W - M, pageHeight - 28)
          .lineWidth(0.5).stroke(C.borde);

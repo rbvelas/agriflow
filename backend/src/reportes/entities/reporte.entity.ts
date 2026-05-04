@@ -8,7 +8,6 @@ import {
 } from 'typeorm';
 import { Usuario } from '../../auth/entities/usuario.entity';
 import { Finca } from '../../fincas/entities/finca.entity';
-import { Lote } from '../../lotes/entities/lote.entity';
 
 export type TipoReporte =
   | 'operacional_diario'
@@ -35,9 +34,10 @@ export class Reporte {
   @JoinColumn({ name: 'finca_id' })
   finca: Finca;
 
-  @ManyToOne(() => Lote, { onDelete: 'CASCADE', nullable: true })
-  @JoinColumn({ name: 'lote_id' })
-  lote: Lote;
+  // Se elimina la relación con Lote porque la tabla no tiene columna lote_id
+  // @ManyToOne(() => Lote, { onDelete: 'CASCADE', nullable: true })
+  // @JoinColumn({ name: 'lote_id' })
+  // lote: Lote;
 
   @Column({
     type: 'enum',
