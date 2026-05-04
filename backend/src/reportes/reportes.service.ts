@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import PDFDocument from 'pdfkit';
+import * as PDFDocument from 'pdfkit';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
