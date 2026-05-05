@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getUsuario } from '@/lib/auth';
+import { useLote } from '@/components/providers/LoteProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -79,6 +81,8 @@ const Campo = ({
 
 export default function FincasPage() {
   const { toast } = useToast();
+  const router = useRouter();
+  const { setLoteSeleccionado } = useLote();
   const usuario = getUsuario();
 
   // ── estado ────────────────────────────────────────────────────
@@ -464,7 +468,15 @@ export default function FincasPage() {
                                   ) : (
                                     <div className="flex gap-2 w-full">
                                       <Button
-                                        onClick={() => window.location.href = `/dashboard`}
+                                        onClick={() => {
+                                          setLoteSeleccionado({
+                                            id: lote.id,
+                                            nombre: lote.nombre,
+                                            fincaId: finca.id,
+                                            fincaNombre: finca.nombre
+                                          });
+                                          router.push('/dashboard');
+                                        }}
                                         className="flex-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-100 text-xs font-bold py-5 rounded-2xl transition-all"
                                       >
                                         Dashboard

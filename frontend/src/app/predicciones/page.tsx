@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Brain, 
   Calendar, 
@@ -25,6 +26,7 @@ import { PrediccionCard } from '@/components/dashboard/PrediccionCard';
 import { cn } from '@/lib/utils';
 
 export default function PrediccionesPage() {
+  const router = useRouter();
   const { loteSeleccionado } = useLote();
   
   // IDs dinámicos
@@ -99,7 +101,7 @@ export default function PrediccionesPage() {
               </p>
             </div>
             <Button 
-              onClick={() => window.location.href = '/dashboard'}
+              onClick={() => router.push('/dashboard')}
               className="bg-slate-900 text-white hover:bg-slate-800 rounded-2xl px-8 py-6 font-bold flex items-center gap-2"
             >
               Ir al Dashboard <ChevronRight size={18} />
@@ -121,7 +123,7 @@ export default function PrediccionesPage() {
               </p>
             </div>
             <Button 
-              onClick={() => window.location.href = '/fincas'}
+              onClick={() => router.push('/fincas')}
               className="bg-slate-900 text-white hover:bg-slate-800 rounded-2xl px-8 py-6 font-bold flex items-center gap-2"
             >
               Ir a Fincas <ChevronRight size={18} />

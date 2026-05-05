@@ -1,6 +1,7 @@
 'use client';
 
 import { trpc } from '@/lib/trpc';
+import { useRouter } from 'next/navigation';
 import { SensorChart } from '@/components/dashboard/SensorChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useLote } from '@/components/providers/LoteProvider';
@@ -33,6 +34,7 @@ const tipoConfig: Record<string, { color: string; icon: any; unidad: string; bg:
 };
 
 export default function SensoresPage() {
+  const router = useRouter();
   const { loteSeleccionado } = useLote();
   const LOTE_ID = loteSeleccionado?.id ?? '';
 
@@ -110,7 +112,7 @@ export default function SensoresPage() {
               </p>
             </div>
             <Button 
-              onClick={() => window.location.href = '/dashboard'}
+              onClick={() => router.push('/dashboard')}
               className="bg-slate-900 text-white hover:bg-slate-800 rounded-2xl px-8 py-6 font-bold flex items-center gap-2"
             >
               Ir al Dashboard <ChevronRight size={18} />
