@@ -233,25 +233,34 @@ export class ReportesService {
       doc.moveTo(M + 30, y + 10).lineTo(M + 30, y + chartH - 20).lineWidth(1).stroke(C.grisClaro);
       doc.moveTo(M + 30, y + chartH - 20).lineTo(M + CW - 10, y + chartH - 20).lineWidth(1).stroke(C.grisClaro);
 
-      // Datos ficticios para el gráfico basados en las predicciones
+      // Puntos de Humedad (Azul)
+      const humPoints = humLecturas.slice(0, 15).reverse();
+      const stepXHum = (CW - 50) / (humPoints.length - 1 || 1);
+      
+      humPoints.forEach((h, i) => {
+        const px = M + 35 + i * stepXHum;
+        const val = Number(h.valor);
+        const py = y + chartH - 20 - (val / 100) * 80;
+        if (i === 0) doc.moveTo(px, py); else doc.lineTo(px, py);
+      });
+      doc.lineWidth(1.5).stroke(C.azulClaro);
+
+      // Puntos de Predicción (Verde)
       const points = datos.predicciones.length;
       const stepX = (CW - 50) / (points - 1 || 1);
       
-      doc.font('Helvetica').fontSize(6).fillColor(C.grisMedio);
       datos.predicciones.forEach((p, i) => {
         const px = M + 35 + i * stepX;
-        const val = parseFloat(p.estimado.replace(',', '')) || 0;
+        const val = parseFloat(p.estimado.replace(/[^0-9.]/g, '')) || 0;
         const py = y + chartH - 20 - (val / 10000) * 80;
-        
-        // Punto
-        doc.circle(px, py, 3).fill(C.azulClaro);
-        // Etiqueta X
-        doc.text(p.fecha.split('/')[0], px - 5, y + chartH - 15);
+        doc.circle(px, py, 3).fill(C.verde);
       });
 
       // Leyenda
-      doc.circle(M + CW - 80, y + 10, 3).fill(C.azulClaro);
-      doc.font('Helvetica').fontSize(8).fillColor(C.grisMedio).text('Rendimiento Est.', M + CW - 72, y + 7);
+      doc.circle(M + CW - 180, y + 10, 3).fill(C.azulClaro);
+      doc.font('Helvetica').fontSize(8).fillColor(C.grisMedio).text('Humedad Suelo (%)', M + CW - 172, y + 7);
+      doc.circle(M + CW - 80, y + 10, 3).fill(C.verde);
+      doc.text('Rendimiento Est.', M + CW - 72, y + 7);
 
       y += chartH + 30;
 
@@ -321,7 +330,7 @@ export class ReportesService {
     // 1. Obtener Lecturas Reales
     const lecturasDB = await this.lecturaRepo
       .createQueryBuilder('l')
-      .innerJoin('l.sensor', 's')
+      .innerJoinAndSelect('l.sensor', 's')
       .where('s.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
       .andWhere('l.registrado_en BETWEEN :inicio AND :fin', { 
         inicio: dto.periodoInicio, 
@@ -332,13 +341,9 @@ export class ReportesService {
       .getMany();
 
     // Calcular KPIs reales
-    const tempLecturas = lecturasDB.filter(l => (l as any).sensor?.tipo === 'temperatura');
-    const humLecturas = lecturasDB.filter(l => (l as any).sensor?.tipo === 'humedad_suelo');
-    const precLecturas = precLecturasFiltradas(lecturasDB);
-    
-    function precLecturasFiltradas(ls: any[]) {
-        return ls.filter(l => l.sensor?.tipo === 'precipitacion');
-    }
+    const tempLecturas = lecturasDB.filter(l => l.sensor?.tipo === 'temperatura');
+    const humLecturas = lecturasDB.filter(l => l.sensor?.tipo === 'humedad_suelo');
+    const precLecturas = lecturasDB.filter(l => l.sensor?.tipo === 'precipitacion');
 
     const humProm = humLecturas.length > 0 
       ? (humLecturas.reduce((a, b) => a + Number(b.valor), 0) / humLecturas.length).toFixed(1) 
