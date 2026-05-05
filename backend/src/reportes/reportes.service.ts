@@ -373,7 +373,7 @@ export class ReportesService {
       // Gráfico Circular: Distribución de Alertas
       if (datos.distribucionAlertas && datos.distribucionAlertas.length > 0) {
         this.drawPieChart(doc, 'Distribución de Alertas',
-          datos.distribucionAlertas,
+          datos.distribucionAlertas.map(d => ({ label: d.tipo, value: d.cantidad, color: d.color })),
           M + subChartW + 60, y + 60, 50
         );
       }
