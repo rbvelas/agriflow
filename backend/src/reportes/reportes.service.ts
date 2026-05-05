@@ -4,13 +4,17 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { Reporte, TipoReporte } from './entities/reporte.entity';
 import { Lote } from '../lotes/entities/lote.entity';
+import { LecturaSensor } from '../sensores/entities/lectura-sensor.entity';
+import { PrediccionRendimiento } from '../predicciones/entities/prediccion-rendimiento.entity';
+import { Alerta } from '../alertas/entities/alerta.entity';
+import { EventoRiego } from '../riegos/entities/evento-riego.entity';
 
 export interface GenerarReporteDto {
   fincaId?: string;
@@ -77,6 +81,14 @@ export class ReportesService {
     private readonly reporteRepo: Repository<Reporte>,
     @InjectRepository(Lote)
     private readonly loteRepo: Repository<Lote>,
+    @InjectRepository(LecturaSensor)
+    private readonly lecturaRepo: Repository<LecturaSensor>,
+    @InjectRepository(PrediccionRendimiento)
+    private readonly prediccionRepo: Repository<PrediccionRendimiento>,
+    @InjectRepository(Alerta)
+    private readonly alertaRepo: Repository<Alerta>,
+    @InjectRepository(EventoRiego)
+    private readonly riegoRepo: Repository<EventoRiego>,
   ) {}
 
   async generarReporte(dto: GenerarReporteDto): Promise<Reporte> {
@@ -282,6 +294,7 @@ export class ReportesService {
   private async obtenerDatosReporte(dto: GenerarReporteDto): Promise<DatosReporte> {
     let nombreEntidad = 'AgriFlow System';
     let tipoEntidad: 'finca' | 'lote' = 'finca';
+    let loteIds: string[] = [];
 
     try {
       if (dto.loteId) {
@@ -289,42 +302,118 @@ export class ReportesService {
         if (lote) {
           nombreEntidad = lote.nombre;
           tipoEntidad = 'lote';
+          loteIds = [lote.id];
         }
       } else if (dto.fincaId) {
         const finca = await this.loteRepo.manager
           .getRepository('finca')
-          .findOne({ where: { id: dto.fincaId } } as any);
+          .findOne({ where: { id: dto.fincaId }, relations: ['lotes'] } as any);
         if (finca) {
           nombreEntidad = (finca as any).nombre;
           tipoEntidad = 'finca';
+          loteIds = (finca as any).lotes?.map((l: any) => l.id) || [];
         }
       }
     } catch (error) {
       this.logger.error(`Error al obtener nombres de entidades: ${error.message}`);
     }
 
-    // En producción, aquí se consultarían las tablas de lecturas, alertas y predicciones
-    // filtrando por lote_id o finca_id y el rango de fechas.
+    // 1. Obtener Lecturas Reales
+    const lecturasDB = await this.lecturaRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.sensor', 's')
+      .where('s.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
+      .andWhere('l.registrado_en BETWEEN :inicio AND :fin', { 
+        inicio: dto.periodoInicio, 
+        fin: dto.periodoFin 
+      })
+      .andWhere('l.es_anomalia = false')
+      .orderBy('l.registrado_en', 'DESC')
+      .getMany();
+
+    // Calcular KPIs reales
+    const tempLecturas = lecturasDB.filter(l => (l as any).sensor?.tipo === 'temperatura');
+    const humLecturas = lecturasDB.filter(l => (l as any).sensor?.tipo === 'humedad_suelo');
+    const precLecturas = precLecturasFiltradas(lecturasDB);
+    
+    function precLecturasFiltradas(ls: any[]) {
+        return ls.filter(l => l.sensor?.tipo === 'precipitacion');
+    }
+
+    const humProm = humLecturas.length > 0 
+      ? (humLecturas.reduce((a, b) => a + Number(b.valor), 0) / humLecturas.length).toFixed(1) 
+      : '0.0';
+    
+    const precAcum = precLecturas.length > 0
+      ? precLecturas.reduce((a, b) => a + Number(b.valor), 0).toFixed(1)
+      : '0.0';
+
+    // 2. Obtener Alertas Activas
+    const alertasCount = await this.alertaRepo.count({
+      where: { 
+        lote: { id: loteIds.length === 1 ? loteIds[0] : Between(loteIds[0], loteIds[loteIds.length-1]) as any },
+        resuelta: false 
+      }
+    });
+
+    // 3. Obtener Predicciones Reales
+    const prediccionesDB = await this.prediccionRepo
+      .createQueryBuilder('p')
+      .innerJoin('p.temporada', 't')
+      .where('t.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
+      .orderBy('p.generado_en', 'DESC')
+      .take(5)
+      .getMany();
+
+    const rendimientoMedio = prediccionesDB.length > 0
+      ? Math.round(prediccionesDB.reduce((a, b) => a + Number(b.rendimiento_estimado_kg_ha), 0) / prediccionesDB.length).toLocaleString()
+      : '0';
+
+    // 4. Eficiencia de Riego (basado en eventos reales)
+    const eventosRiego = await this.riegoRepo
+      .createQueryBuilder('e')
+      .where('e.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
+      .andWhere('e.creado_en BETWEEN :inicio AND :fin', { 
+        inicio: dto.periodoInicio, 
+        fin: dto.periodoFin 
+      })
+      .getMany();
+    
+    let eficiencia = 0;
+    if (eventosRiego.length > 0) {
+      const sumRec = eventosRiego.reduce((a, b) => a + Number(b.lamina_recomendada_mm), 0);
+      const sumApl = eventosRiego.reduce((a, b) => a + Number(b.lamina_aplicada_mm || 0), 0);
+      eficiencia = sumRec > 0 ? Math.min(100, Math.round((sumApl / sumRec) * 100)) : 100;
+    } else {
+      eficiencia = 100; // Si no hay eventos, asumimos cumplimiento o falta de necesidad
+    }
+
     return {
       nombreEntidad,
       tipoEntidad,
       periodoInicio: dto.periodoInicio.toLocaleDateString('es-PE'),
       periodoFin: dto.periodoFin.toLocaleDateString('es-PE'),
       tipo: dto.tipo.replace(/_/g, ' ').toUpperCase(),
-      rendimientoEstimado: '7,510', // Ejemplo dinámico
-      humedadPromedio: '38.2',
-      precipitacionAcumulada: '12.5',
-      alertasActivas: 1,
-      eficienciaRiego: '92.0',
-      lecturas: [
-        { sensor: '5TM-S01', tipo: 'Humedad Suelo', valor: '38.2', unidad: '%VWC', fecha: new Date().toLocaleString('es-PE'), anomalia: false },
-        { sensor: 'DHT22-S02', tipo: 'Temperatura', valor: '24.3', unidad: '°C', fecha: new Date().toLocaleString('es-PE'), anomalia: false },
-      ],
-      predicciones: [
-        { fecha: 'Hoy', estimado: '7,510', inferior: '6,900', superior: '8,100', confianza: '82.5' },
-        { fecha: 'Mañana', estimado: '7,480', inferior: '6,850', superior: '8,050', confianza: '81.2' },
-        { fecha: 'Próx. Semana', estimado: '7,600', inferior: '7,000', superior: '8,200', confianza: '79.5' },
-      ],
+      rendimientoEstimado: rendimientoMedio,
+      humedadPromedio: humProm,
+      precipitacionAcumulada: precAcum,
+      alertasActivas: alertasCount,
+      eficienciaRiego: eficiencia.toString(),
+      lecturas: lecturasDB.slice(0, 10).map(l => ({
+        sensor: (l as any).sensor?.nombre || 'S-Desconocido',
+        tipo: (l as any).sensor?.tipo || 'N/A',
+        valor: Number(l.valor).toFixed(1),
+        unidad: (l as any).sensor?.unidad || '',
+        fecha: l.registrado_en.toLocaleString('es-PE'),
+        anomalia: l.es_anomalia
+      })),
+      predicciones: prediccionesDB.map(p => ({
+        fecha: p.generado_en.toLocaleDateString('es-PE'),
+        estimado: Math.round(p.rendimiento_estimado_kg_ha).toLocaleString(),
+        inferior: Math.round(p.intervalo_inferior_kg_ha).toLocaleString(),
+        superior: Math.round(p.intervalo_superior_kg_ha).toLocaleString(),
+        confianza: p.confianza_porcentaje.toFixed(1)
+      })),
     };
   }
 }
