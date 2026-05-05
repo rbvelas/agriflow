@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Usuario } from '../../auth/entities/usuario.entity';
 import { Finca } from '../../fincas/entities/finca.entity';
+import { Lote } from '../../lotes/entities/lote.entity';
 
 export type TipoReporte =
   | 'operacional_diario'
