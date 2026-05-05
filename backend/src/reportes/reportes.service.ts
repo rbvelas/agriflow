@@ -348,13 +348,16 @@ export class ReportesService {
       ? precLecturas.reduce((a, b) => a + Number(b.valor), 0).toFixed(1)
       : '0.0';
 
+    const tempProm = tempLecturas.length > 0
+      ? (tempLecturas.reduce((a, b) => a + Number(b.valor), 0) / tempLecturas.length).toFixed(1)
+      : '25.0';
+
     // 2. Obtener Alertas Activas
-    const alertasCount = await this.alertaRepo.count({
-      where: { 
-        lote: { id: loteIds.length === 1 ? loteIds[0] : Between(loteIds[0], loteIds[loteIds.length-1]) as any },
-        resuelta: false 
-      }
-    });
+    const alertasCount = await this.alertaRepo
+      .createQueryBuilder('a')
+      .where('a.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
+      .andWhere('a.resuelta = false')
+      .getCount();
 
     // 3. Obtener Predicciones Reales
     const prediccionesDB = await this.prediccionRepo
@@ -373,7 +376,7 @@ export class ReportesService {
     const eventosRiego = await this.riegoRepo
       .createQueryBuilder('e')
       .where('e.lote_id IN (:...loteIds)', { loteIds: loteIds.length > 0 ? loteIds : [null] })
-      .andWhere('e.creado_en BETWEEN :inicio AND :fin', { 
+      .andWhere('e.fecha_hora BETWEEN :inicio AND :fin', { 
         inicio: dto.periodoInicio, 
         fin: dto.periodoFin 
       })
@@ -409,10 +412,10 @@ export class ReportesService {
       })),
       predicciones: prediccionesDB.map(p => ({
         fecha: p.generado_en.toLocaleDateString('es-PE'),
-        estimado: Math.round(p.rendimiento_estimado_kg_ha).toLocaleString(),
-        inferior: Math.round(p.intervalo_inferior_kg_ha).toLocaleString(),
-        superior: Math.round(p.intervalo_superior_kg_ha).toLocaleString(),
-        confianza: p.confianza_porcentaje.toFixed(1)
+        estimado: Math.round(p.rendimiento_estimado_kg_ha).toLocaleString('es-PE'),
+        inferior: Math.round(p.intervalo_inferior_kg_ha).toLocaleString('es-PE'),
+        superior: Math.round(p.intervalo_superior_kg_ha).toLocaleString('es-PE'),
+        confianza: Number(p.confianza_porcentaje || 0).toFixed(1)
       })),
     };
   }
