@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { Reporte, TipoReporte } from './entities/reporte.entity';
+import { Lote } from '../lotes/entities/lote.entity';
 
 export interface GenerarReporteDto {
   fincaId?: string;
@@ -74,13 +75,29 @@ export class ReportesService {
   constructor(
     @InjectRepository(Reporte)
     private readonly reporteRepo: Repository<Reporte>,
+    @InjectRepository(Lote)
+    private readonly loteRepo: Repository<Lote>,
   ) {}
 
   async generarReporte(dto: GenerarReporteDto): Promise<Reporte> {
+    let fincaId = dto.fincaId;
+
+    // Si es reporte por lote y no viene fincaId, lo buscamos
+    if (dto.loteId && !fincaId) {
+      const lote = await this.loteRepo.findOne({
+        where: { id: dto.loteId },
+        relations: ['finca'],
+      });
+      if (lote && lote.finca) {
+        fincaId = lote.finca.id;
+      }
+    }
+
     const reporte = await this.reporteRepo.save(
       this.reporteRepo.create({
         generado_por: { id: dto.usuarioId } as any,
-        finca: dto.fincaId ? ({ id: dto.fincaId } as any) : null,
+        finca: fincaId ? ({ id: fincaId } as any) : null,
+        lote: dto.loteId ? ({ id: dto.loteId } as any) : null,
         tipo: dto.tipo,
         periodo_inicio: dto.periodoInicio,
         periodo_fin: dto.periodoFin,
@@ -120,212 +137,193 @@ export class ReportesService {
       stream.on('finish', resolve);
       stream.on('error', reject);
 
-      const W = doc.page.width;   // 595
-      const M = 28;               // margen lateral
-      const CW = W - M * 2;       // ancho de contenido
+      const W = doc.page.width;   // 595.28
+      const H = doc.page.height;  // 841.89
+      const M = 40;               // Margen profesional
+      const CW = W - M * 2;
 
-      // HEADER
-      doc.rect(0, 0, W, 72).fill(C.azulOscuro);
+      // FONDO DE PÁGINA
+      doc.rect(0, 0, W, H).fill(C.blanco);
 
+      // HEADER DE ALTA FIDELIDAD
+      doc.rect(0, 0, W, 100).fill(C.azulOscuro);
+      
+      // Logo / Nombre
       doc.fillColor(C.blanco)
-         .font('Helvetica-Bold').fontSize(16)
-         .text(`AgriFlow — ${datos.tipo}`, M, 16, { width: CW * 0.65 });
+         .font('Helvetica-Bold').fontSize(22)
+         .text('AgriFlow', M, 30);
+      
+      doc.font('Helvetica').fontSize(10).fillColor('rgba(255,255,255,0.7)')
+         .text('INTELIGENCIA AGRÍCOLA DE PRECISIÓN', M, 55);
 
-      doc.font('Helvetica').fontSize(8).fillColor('rgba(255,255,255,0.65)')
-         .text(
-           `${datos.nombreEntidad} · ${datos.tipoEntidad === 'lote' ? 'Lote de Producción' : 'Finca Agrícola'} · Sistema de Agricultura de Precisión`,
-           M, 36, { width: CW * 0.65 },
-         );
+      // Título del Reporte (Derecha)
+      const tipoTxt = datos.tipo.toUpperCase();
+      doc.font('Helvetica-Bold').fontSize(14).fillColor(C.blanco)
+         .text(tipoTxt, W - M - 200, 35, { width: 200, align: 'right' });
 
-      // Badge
-      const badge = datos.tipo;
-      const bW = doc.widthOfString(badge) + 16;
-      doc.roundedRect(W - M - bW, 14, bW, 16, 8)
-         .fill('rgba(255,255,255,0.18)');
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(C.blanco)
-         .text(badge, W - M - bW + 8, 18, { width: bW });
+      doc.font('Helvetica').fontSize(9).fillColor('rgba(255,255,255,0.7)')
+         .text(`GENERADO EL ${new Date().toLocaleDateString('es-PE')}`, W - M - 200, 55, { width: 200, align: 'right' });
 
-      doc.font('Helvetica').fontSize(8).fillColor('rgba(255,255,255,0.65)')
-         .text(`Período: ${datos.periodoInicio} — ${datos.periodoFin}`, W - M - 160, 34, { width: 160, align: 'right' })
-         .text(`ID: ${reporteId.substring(0, 8).toUpperCase()}`, W - M - 160, 46, { width: 160, align: 'right' });
+      let y = 130;
 
-      let y = 88;
+      // SECCIÓN: INFORMACIÓN GENERAL
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(C.azulOscuro)
+         .text('1. INFORMACIÓN GENERAL', M, y);
+      y += 18;
+      doc.moveTo(M, y).lineTo(W - M, y).lineWidth(1).stroke(C.borde);
+      y += 15;
 
-      // Helper: sección título
-      const sectionTitle = (titulo: string) => {
-        doc.font('Helvetica-Bold').fontSize(10).fillColor(C.azulOscuro)
-           .text(titulo, M, y);
-        y += 14;
-        doc.moveTo(M, y).lineTo(W - M, y).lineWidth(1.5).stroke(C.borde);
-        y += 10;
+      // Grid de info
+      const infoY = y;
+      const drawInfoItem = (label: string, value: string, x: number) => {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(C.grisClaro).text(label.toUpperCase(), x, infoY);
+        doc.font('Helvetica-Bold').fontSize(11).fillColor(C.grisOscuro).text(value, x, infoY + 12);
       };
 
-      // MÉTRICAS
-      sectionTitle('Resumen del Período');
+      drawInfoItem('Entidad', datos.nombreEntidad, M);
+      drawInfoItem('Tipo', datos.tipoEntidad === 'lote' ? 'LOTE DE PRODUCCIÓN' : 'FINCA AGRÍCOLA', M + 150);
+      drawInfoItem('Período', `${datos.periodoInicio} — ${datos.periodoFin}`, M + 320);
+      y += 45;
+
+      // SECCIÓN: KPI PRINCIPALES (CARDS)
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(C.azulOscuro).text('2. INDICADORES CLAVE (KPI)', M, y);
+      y += 25;
 
       const cards = [
-        { valor: datos.rendimientoEstimado, unidad: 'kg/ha', label: 'Rendimiento Estimado', color: C.verde },
-        { valor: `${datos.humedadPromedio}%`, unidad: '%VWC', label: 'Humedad Suelo Prom.', color: C.azulOscuro },
-        { valor: datos.precipitacionAcumulada, unidad: 'mm', label: 'Precipitación Acum.', color: C.azulOscuro },
-        { valor: String(datos.alertasActivas), unidad: 'alertas', label: 'Alertas Activas', color: datos.alertasActivas > 0 ? C.amarillo : C.verde },
+        { val: datos.rendimientoEstimado, unit: 'kg/ha', lab: 'Rendimiento', color: C.verde },
+        { val: `${datos.humedadPromedio}%`, unit: 'VWC', lab: 'Humedad Suelo', color: C.azulClaro },
+        { val: datos.precipitacionAcumulada, unit: 'mm', lab: 'Precipitación', color: C.azulOscuro },
+        { val: `${datos.eficienciaRiego}%`, unit: 'Eficiencia', lab: 'Uso de Agua', color: C.amarillo },
       ];
 
-      const cW = (CW - 9 * 3) / 4;  // ancho de cada card (4 columnas, 3 gaps)
+      const cardW = (CW - 15 * 3) / 4;
       cards.forEach((c, i) => {
-        const cx = M + i * (cW + 9);
-        doc.roundedRect(cx, y, cW, 52, 6).fill(C.fondo);
-        doc.roundedRect(cx, y, cW, 52, 6).lineWidth(0.5).stroke(C.borde);
-        doc.font('Helvetica-Bold').fontSize(20).fillColor(c.color)
-           .text(c.valor, cx + 8, y + 8, { width: cW - 16 });
-        doc.font('Helvetica').fontSize(8).fillColor(C.grisMedio)
-           .text(c.unidad, cx + 8, y + 30, { width: cW - 16 });
-        doc.font('Helvetica').fontSize(7.5).fillColor(C.grisClaro)
-           .text(c.label.toUpperCase(), cx + 8, y + 40, { width: cW - 16 });
+        const cx = M + i * (cardW + 15);
+        doc.roundedRect(cx, y, cardW, 70, 10).fill(C.fondo);
+        doc.roundedRect(cx, y, cardW, 70, 10).lineWidth(0.5).stroke(C.borde);
+        
+        doc.fillColor(c.color).font('Helvetica-Bold').fontSize(18).text(c.val, cx + 10, y + 15);
+        doc.fillColor(C.grisMedio).font('Helvetica').fontSize(8).text(c.unit, cx + 10, y + 35);
+        doc.fillColor(C.grisClaro).font('Helvetica-Bold').fontSize(7).text(c.lab.toUpperCase(), cx + 10, y + 48);
       });
-      y += 66;
+      y += 95;
 
-      // PREDICCIONES ML
-      sectionTitle('Predicciones ML (Ensemble RF+GB+XGB)');
+      // SECCIÓN: VISUALIZACIÓN DE DATOS (GRÁFICO)
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(C.azulOscuro).text('3. ANÁLISIS DE TENDENCIAS (HUMEDAD VS PREDICCIÓN)', M, y);
+      y += 25;
 
-      const predCols = [
-        { label: 'Fecha',            w: 70 },
-        { label: 'Estimado (kg/ha)', w: 100 },
-        { label: 'Rango P5–P95',     w: 130 },
-        { label: 'Confianza',        w: 60 },
-        { label: 'Indicador',        w: CW - 70 - 100 - 130 - 60 },
-      ];
+      // Dibujar un mini gráfico de barras/líneas representativo
+      const chartH = 120;
+      doc.rect(M, y, CW, chartH).fill(C.fondo);
+      doc.rect(M, y, CW, chartH).lineWidth(0.5).stroke(C.borde);
 
-      doc.rect(M, y, CW, 18).fill(C.azulOscuro);
-      let cx = M;
-      predCols.forEach((col) => {
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(C.blanco)
-           .text(col.label, cx + 5, y + 5, { width: col.w - 5 });
-        cx += col.w;
+      // Ejes
+      doc.moveTo(M + 30, y + 10).lineTo(M + 30, y + chartH - 20).lineWidth(1).stroke(C.grisClaro);
+      doc.moveTo(M + 30, y + chartH - 20).lineTo(M + CW - 10, y + chartH - 20).lineWidth(1).stroke(C.grisClaro);
+
+      // Datos ficticios para el gráfico basados en las predicciones
+      const points = datos.predicciones.length;
+      const stepX = (CW - 50) / (points - 1 || 1);
+      
+      doc.font('Helvetica').fontSize(6).fillColor(C.grisMedio);
+      datos.predicciones.forEach((p, i) => {
+        const px = M + 35 + i * stepX;
+        const val = parseFloat(p.estimado.replace(',', '')) || 0;
+        const py = y + chartH - 20 - (val / 10000) * 80;
+        
+        // Punto
+        doc.circle(px, py, 3).fill(C.azulClaro);
+        // Etiqueta X
+        doc.text(p.fecha.split('/')[0], px - 5, y + chartH - 15);
       });
-      y += 18;
 
-      datos.predicciones.forEach((p, idx) => {
-        if (idx % 2 === 0) doc.rect(M, y, CW, 18).fill(C.fondo);
-        const vals = [p.fecha, p.estimado, `${p.inferior} – ${p.superior}`, `${p.confianza}%`];
-        cx = M;
-        vals.forEach((v, vi) => {
-          const isBold = vi === 1;
-          doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
-             .fillColor(C.grisOscuro)
-             .text(v, cx + 5, y + 5, { width: predCols[vi].w - 5 });
-          cx += predCols[vi].w;
-        });
-        // Barra de confianza
-        const barX = cx + 5;
-        const barW = predCols[4].w - 14;
-        const conf = parseFloat(p.confianza) / 100;
-        doc.rect(barX, y + 7, barW, 5).fill('#e2e8f0');
-        doc.rect(barX, y + 7, barW * conf, 5).fill(C.azulClaro);
-        y += 18;
+      // Leyenda
+      doc.circle(M + CW - 80, y + 10, 3).fill(C.azulClaro);
+      doc.font('Helvetica').fontSize(8).fillColor(C.grisMedio).text('Rendimiento Est.', M + CW - 72, y + 7);
+
+      y += chartH + 30;
+
+      // TABLA DE PREDICCIONES
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(C.azulOscuro).text('4. DETALLE DE PREDICCIONES ML', M, y);
+      y += 15;
+
+      doc.rect(M, y, CW, 20).fill(C.azulOscuro);
+      doc.fillColor(C.blanco).font('Helvetica-Bold').fontSize(9);
+      doc.text('FECHA', M + 10, y + 6);
+      doc.text('ESTIMADO (KG/HA)', M + 120, y + 6);
+      doc.text('INTERVALO CONFIANZA', M + 250, y + 6);
+      doc.text('CONFIANZA', M + 430, y + 6);
+      y += 20;
+
+      datos.predicciones.forEach((p, i) => {
+        if (i % 2 === 0) doc.rect(M, y, CW, 20).fill(C.fondo);
+        doc.fillColor(C.grisOscuro).font('Helvetica').fontSize(9);
+        doc.text(p.fecha, M + 10, y + 6);
+        doc.font('Helvetica-Bold').text(p.estimado, M + 120, y + 6);
+        doc.font('Helvetica').text(`${p.inferior} - ${p.superior}`, M + 250, y + 6);
+        doc.text(`${p.confianza}%`, M + 430, y + 6);
+        y += 20;
       });
-      y += 14;
-
-      // LECTURAS SENSORES
-      sectionTitle('Lecturas de Sensores (Últimas del Período)');
-
-      const sensCols = [
-        { label: 'Sensor',    w: 80 },
-        { label: 'Variable',  w: 90 },
-        { label: 'Valor',     w: 55 },
-        { label: 'Unidad',    w: 55 },
-        { label: 'Registrado', w: 120 },
-        { label: 'Estado',    w: CW - 80 - 90 - 55 - 55 - 120 },
-      ];
-
-      doc.rect(M, y, CW, 18).fill(C.azulOscuro);
-      cx = M;
-      sensCols.forEach((col) => {
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(C.blanco)
-           .text(col.label, cx + 5, y + 5, { width: col.w - 5 });
-        cx += col.w;
-      });
-      y += 18;
-
-      datos.lecturas.forEach((l, idx) => {
-        if (idx % 2 === 0) doc.rect(M, y, CW, 18).fill(C.fondo);
-        const vals = [l.sensor, l.tipo, l.valor, l.unidad, l.fecha];
-        cx = M;
-        vals.forEach((v, vi) => {
-          const isBold = vi === 2;
-          doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
-             .fillColor(C.grisOscuro)
-             .text(v, cx + 5, y + 5, { width: sensCols[vi].w - 5 });
-          cx += sensCols[vi].w;
-        });
-        // Chip estado
-        const chipColor = l.anomalia ? C.rojo : C.verde;
-        const chipBg   = l.anomalia ? '#fee2e2' : '#dcfce7';
-        const chipText = l.anomalia ? 'Anomalía' : 'Normal';
-        const chipW = 48;
-        doc.roundedRect(cx + 4, y + 4, chipW, 12, 5).fill(chipBg);
-        doc.font('Helvetica-Bold').fontSize(7).fillColor(chipColor)
-           .text(chipText, cx + 4, y + 7, { width: chipW, align: 'center' });
-        y += 18;
-      });
-      y += 14;
-
-      // EFICIENCIA HÍDRICA (solo gestión/ejecutivo)
-      const esGestion = tipo === 'gestion_mensual' || tipo === 'ejecutivo';
-      if (esGestion) {
-        sectionTitle('Eficiencia Hídrica');
-        doc.roundedRect(M, y, 120, 52, 6).fill(C.fondo);
-        doc.roundedRect(M, y, 120, 52, 6).lineWidth(0.5).stroke(C.borde);
-        doc.font('Helvetica-Bold').fontSize(20).fillColor(C.verde)
-           .text(`${datos.eficienciaRiego}%`, M + 8, y + 8, { width: 104 });
-        doc.font('Helvetica').fontSize(8).fillColor(C.grisMedio)
-           .text('eficiencia', M + 8, y + 30, { width: 104 });
-        doc.font('Helvetica').fontSize(7.5).fillColor(C.grisClaro)
-           .text('RIEGO APLICADO VS RECOMENDADO', M + 8, y + 40, { width: 104 });
-
-        doc.font('Helvetica').fontSize(9).fillColor(C.grisMedio)
-           .text(
-             'La eficiencia hídrica se calcula como el cociente entre la lámina de riego aplicada y la lámina recomendada por el modelo FAO-56 (ETc = ET0 x Kc). Valores > 85% indican una gestión hídrica óptima.',
-             M + 130, y + 8,
-             { width: CW - 130, lineGap: 2 },
-           );
-        y += 70;
-      }
 
       // FOOTER
-      const pageHeight = doc.page.height;
-      doc.moveTo(M, pageHeight - 28).lineTo(W - M, pageHeight - 28)
-         .lineWidth(0.5).stroke(C.borde);
-      doc.font('Helvetica').fontSize(8).fillColor(C.grisClaro)
-         .text('AgriFlow v1.0 — Sistema de Agricultura de Precisión', M, pageHeight - 20)
-         .text(`Generado: ${new Date().toLocaleString('es-PE')} · Ensemble ML v1.0`, M, pageHeight - 20, { align: 'right', width: CW });
+      const pages = doc.bufferedPageRange();
+      for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(i);
+        doc.rect(0, H - 40, W, 40).fill(C.fondo);
+        doc.fillColor(C.grisClaro).font('Helvetica').fontSize(8)
+           .text(`AGRIFLOW — REPORTE DE SISTEMA · ID: ${reporteId.toUpperCase()}`, M, H - 25);
+        doc.text(`PÁGINA ${i + 1} DE ${pages.count}`, W - M - 100, H - 25, { align: 'right', width: 100 });
+      }
 
       doc.end();
     });
   }
 
   private async obtenerDatosReporte(dto: GenerarReporteDto): Promise<DatosReporte> {
+    let nombreEntidad = 'AgriFlow System';
+    let tipoEntidad: 'finca' | 'lote' = 'finca';
+
+    try {
+      if (dto.loteId) {
+        const lote = await this.loteRepo.findOne({ where: { id: dto.loteId } });
+        if (lote) {
+          nombreEntidad = lote.nombre;
+          tipoEntidad = 'lote';
+        }
+      } else if (dto.fincaId) {
+        const finca = await this.loteRepo.manager
+          .getRepository('finca')
+          .findOne({ where: { id: dto.fincaId } } as any);
+        if (finca) {
+          nombreEntidad = (finca as any).nombre;
+          tipoEntidad = 'finca';
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error al obtener nombres de entidades: ${error.message}`);
+    }
+
+    // En producción, aquí se consultarían las tablas de lecturas, alertas y predicciones
+    // filtrando por lote_id o finca_id y el rango de fechas.
     return {
-      nombreEntidad: dto.loteId ? 'Lote 01 - Sector Norte' : 'Finca La Esperanza',
-      tipoEntidad: dto.loteId ? 'lote' : 'finca',
+      nombreEntidad,
+      tipoEntidad,
       periodoInicio: dto.periodoInicio.toLocaleDateString('es-PE'),
       periodoFin: dto.periodoFin.toLocaleDateString('es-PE'),
       tipo: dto.tipo.replace(/_/g, ' ').toUpperCase(),
-      rendimientoEstimado: '8,240',
-      humedadPromedio: '52.3',
-      precipitacionAcumulada: '14.0',
-      alertasActivas: 2,
-      eficienciaRiego: '87.5',
+      rendimientoEstimado: '7,510', // Ejemplo dinámico
+      humedadPromedio: '38.2',
+      precipitacionAcumulada: '12.5',
+      alertasActivas: 1,
+      eficienciaRiego: '92.0',
       lecturas: [
-        { sensor: 'DHT22-A1', tipo: 'Temperatura',    valor: '27.3', unidad: '°C',    fecha: '30/04/2025 08:00', anomalia: false },
-        { sensor: '5TM-A1',   tipo: 'Humedad Suelo',  valor: '45.2', unidad: '%VWC',  fecha: '30/04/2025 08:00', anomalia: false },
-        { sensor: 'Davis-A1', tipo: 'Precipitación',  valor: '8.1',  unidad: 'mm',    fecha: '30/04/2025 06:00', anomalia: false },
-        { sensor: 'DHT22-A1', tipo: 'Temperatura',    valor: '29.1', unidad: '°C',    fecha: '29/04/2025 14:00', anomalia: false },
-        { sensor: '5TM-A1',   tipo: 'Humedad Suelo',  valor: '39.1', unidad: '%VWC',  fecha: '29/04/2025 14:00', anomalia: true  },
+        { sensor: '5TM-S01', tipo: 'Humedad Suelo', valor: '38.2', unidad: '%VWC', fecha: new Date().toLocaleString('es-PE'), anomalia: false },
+        { sensor: 'DHT22-S02', tipo: 'Temperatura', valor: '24.3', unidad: '°C', fecha: new Date().toLocaleString('es-PE'), anomalia: false },
       ],
       predicciones: [
-        { fecha: '30/04/2025', estimado: '8,240', inferior: '7,100', superior: '9,380', confianza: '82.5' },
-        { fecha: '29/04/2025', estimado: '8,110', inferior: '6,980', superior: '9,240', confianza: '80.1' },
-        { fecha: '28/04/2025', estimado: '7,950', inferior: '6,800', superior: '9,100', confianza: '79.3' },
+        { fecha: 'Hoy', estimado: '7,510', inferior: '6,900', superior: '8,100', confianza: '82.5' },
+        { fecha: 'Mañana', estimado: '7,480', inferior: '6,850', superior: '8,050', confianza: '81.2' },
+        { fecha: 'Próx. Semana', estimado: '7,600', inferior: '7,000', superior: '8,200', confianza: '79.5' },
       ],
     };
   }

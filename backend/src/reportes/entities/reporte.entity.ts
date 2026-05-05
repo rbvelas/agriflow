@@ -34,10 +34,9 @@ export class Reporte {
   @JoinColumn({ name: 'finca_id' })
   finca: Finca;
 
-  // Se elimina la relación con Lote porque la tabla no tiene columna lote_id
-  // @ManyToOne(() => Lote, { onDelete: 'CASCADE', nullable: true })
-  // @JoinColumn({ name: 'lote_id' })
-  // lote: Lote;
+  @ManyToOne(() => Lote, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'lote_id' })
+  lote: Lote;
 
   @Column({
     type: 'enum',

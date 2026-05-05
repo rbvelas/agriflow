@@ -121,11 +121,15 @@ export default function DashboardPage() {
   });
 
   const handleGenerarReporte = () => {
+    if (!LOTE_ID) {
+      toast({ title: '⚠️ Error', description: 'Debe seleccionar un lote.', variant: 'destructive' });
+      return;
+    }
     setGenerandoPDF(true);
     const hoy = new Date();
     const hace7dias = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     generarReporteMutation.mutate({
-      fincaId: FINCA_ID,
+      loteId: LOTE_ID,
       tipo: 'operacional_semanal',
       periodoInicio: hace7dias.toISOString(),
       periodoFin: hoy.toISOString(),
