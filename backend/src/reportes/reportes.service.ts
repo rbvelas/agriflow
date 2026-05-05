@@ -119,10 +119,10 @@ export class ReportesService {
 
     try {
       await fsp.mkdir(this.outputDir, { recursive: true });
-      const datos = await this.obtenerDatosReporte(dto);
+      const { datos, humLecturas } = await this.obtenerDatosReporte(dto);
       const rutaArchivo = path.join(this.outputDir, `reporte_${reporte.id}.pdf`);
 
-      await this.generarPDF(datos, dto.tipo, reporte.id, rutaArchivo);
+      await this.generarPDF(datos, dto.tipo, reporte.id, rutaArchivo, humLecturas);
 
       this.logger.log(`PDF generado: ${rutaArchivo}`);
       reporte.ruta_archivo = rutaArchivo;
@@ -141,6 +141,7 @@ export class ReportesService {
     tipo: TipoReporte,
     reporteId: string,
     rutaArchivo: string,
+    humLecturas: LecturaSensor[],
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true });
@@ -300,7 +301,7 @@ export class ReportesService {
     });
   }
 
-  private async obtenerDatosReporte(dto: GenerarReporteDto): Promise<DatosReporte> {
+  private async obtenerDatosReporte(dto: GenerarReporteDto): Promise<{ datos: DatosReporte, humLecturas: LecturaSensor[] }> {
     let nombreEntidad = 'AgriFlow System';
     let tipoEntidad: 'finca' | 'lote' = 'finca';
     let loteIds: string[] = [];
@@ -396,7 +397,7 @@ export class ReportesService {
       eficiencia = 100; // Si no hay eventos, asumimos cumplimiento o falta de necesidad
     }
 
-    return {
+    const datos: DatosReporte = {
       nombreEntidad,
       tipoEntidad,
       periodoInicio: dto.periodoInicio.toLocaleDateString('es-PE'),
@@ -423,5 +424,7 @@ export class ReportesService {
         confianza: Number(p.confianza_porcentaje || 0).toFixed(1)
       })),
     };
+
+    return { datos, humLecturas };
   }
 }
